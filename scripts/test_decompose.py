@@ -13,6 +13,8 @@ Covers:
 """
 
 import json
+import subprocess
+import sys
 import pytest
 
 from decompose import (
@@ -556,3 +558,83 @@ class TestEdgeCases:
         parsed = json.loads(json_output)
         assert parsed["total_subtasks"] == 3
         assert parsed["total_waves"] == 2
+
+
+class TestCLI:
+    """Tests for the main() CLI entry point."""
+
+    SCRIPT = str(__import__("pathlib").Path(__file__).parent / "decompose.py")
+
+    def _run(self, *args):
+        return subprocess.run(
+            [sys.executable, self.SCRIPT, *args],
+            capture_output=True, text=True, timeout=10,
+        )
+
+    def test_plan_markdown_output(self):
+        plan_json = json.dumps([
+            {"id": 1, "desc": "A", "deps": []},
+            {"id": 2, "desc": "B", "deps": [1]},
+        ])
+        result = self._run("--plan", plan_json)
+        assert result.returncode == 0
+        assert "Wave 1" in result.stdout
+        assert "Wave 2" in result.stdout
+
+    def test_plan_json_output(self):
+        plan_json = json.dumps([
+            {"id": 1, "desc": "A", "deps": []},
+            {"id": 2, "desc": "B", "deps": [1]},
+        ])
+        result = self._run("--plan", plan_json, "-o", "json")
+        assert result.returncode == 0
+        parsed = json.loads(result.stdout)
+        assert parsed["total_subtasks"] == 2
+        assert parsed["total_waves"] == 2
+
+    def test_validate_valid_dag(self):
+        plan_json = json.dumps([
+            {"id": 1, "desc": "A", "deps": []},
+            {"id": 2, "desc": "B", "deps": [1]},
+        ])
+        result = self._run("--validate", plan_json)
+        assert result.returncode == 0
+        parsed = json.loads(result.stdout)
+        assert parsed["valid"] is True
+        assert parsed["subtasks"] == 2
+
+    def test_validate_cycle_exits_nonzero(self):
+        plan_json = json.dumps([
+            {"id": 1, "desc": "A", "deps": [2]},
+            {"id": 2, "desc": "B", "deps": [1]},
+        ])
+        result = self._run("--validate", plan_json)
+        assert result.returncode == 1
+        parsed = json.loads(result.stdout)
+        assert parsed["valid"] is False
+        assert "cycle" in parsed["error"].lower()
+
+    def test_validate_unknown_dep_exits_nonzero(self):
+        plan_json = json.dumps([
+            {"id": 1, "desc": "A", "deps": [99]},
+        ])
+        result = self._run("--validate", plan_json)
+        assert result.returncode == 1
+        parsed = json.loads(result.stdout)
+        assert parsed["valid"] is False
+        assert "unknown" in parsed["error"].lower()
+
+    def test_no_args_shows_help(self):
+        result = self._run()
+        assert result.returncode == 0
+        assert "Example" in result.stdout or "usage" in result.stdout.lower()
+
+    def test_max_concurrency_flag(self):
+        plan_json = json.dumps([
+            {"id": 1, "desc": "A", "deps": []},
+            {"id": 2, "desc": "B", "deps": []},
+            {"id": 3, "desc": "C", "deps": []},
+        ])
+        result = self._run("--plan", plan_json, "--max-concurrency", "1")
+        assert result.returncode == 0
+        assert "Wave 3" in result.stdout

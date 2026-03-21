@@ -54,7 +54,7 @@ Group into waves — sets of tasks that execute simultaneously:
 - **Wave 2**: Tasks whose dependencies are satisfied by Wave 1
 - **Wave N**: Continue until all tasks scheduled
 
-**Optional**: If `scripts/decompose.py` is available, validate with `python scripts/decompose.py --validate '<JSON>'`.
+**Optional**: If `scripts/decompose.py` is available, validate with `python scripts/decompose.py --validate '<JSON>'`. This catches cycles and missing dependencies the LLM decomposition might introduce and provides an authoritative speedup estimate.
 
 Present the plan:
 ```
@@ -70,7 +70,7 @@ Parallelism: X tasks across Y waves | Speedup: ~Zx
 
 ### Phase 4: Execute
 
-Launch each wave using the **Agent tool**. You MUST call the Agent tool to spawn subagents — do not execute tasks yourself sequentially.
+Launch each wave using the **Agent tool**. You MUST call the Agent tool to spawn subagents — do not execute tasks yourself sequentially. If you catch yourself writing code directly while agents could be running, stop and dispatch agents instead. The plan is the means, not the end — parallel agent dispatch is what delivers wall-clock savings.
 
 Critical rules:
 1. **All tasks within a wave launch in a single message** — multiple Agent tool calls in one response.
