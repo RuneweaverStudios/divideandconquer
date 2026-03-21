@@ -1,12 +1,18 @@
 # Divide and Conquer
 
-**Make your AI coding assistant do multiple things at once instead of one thing at a time.**
+**Your Claude Code tasks finish 2-3x faster. Drop in one skill and Claude starts parallelizing automatically.**
 
-## What Is This?
+## The Problem
 
-When you ask an AI assistant like Claude to build something — say, "add a chat feature with a database, an API, a frontend, and tests" — it normally does each piece one at a time. First the database, then the API, then the frontend, then the tests. Like a single cook making a four-course meal.
+You ask Claude to build a feature. It does the database, then the API, then the frontend, then the tests — one thing at a time. You watch and wait while it works through a queue that didn't need to be a queue.
 
-**Divide and Conquer changes that.** It teaches Claude to work more like a kitchen brigade: figure out which dishes can be prepared simultaneously, assign each to a different chef (subagent), and get the whole meal done in a fraction of the time.
+Half that work could have been running simultaneously.
+
+## The Fix
+
+Install this skill and Claude starts thinking in parallel by default. It figures out which pieces of your task are independent, launches them all at once, and only waits when something genuinely depends on something else.
+
+A 9-step feature build becomes 4 waves of concurrent work. Same result, fraction of the wall-clock time.
 
 Here's what happens when you install this skill:
 
