@@ -1,0 +1,64 @@
+{
+  "version": "1.0.0",
+  "routing": {
+    "default_model": "sonnet",
+    "tiers": {
+      "research": {
+        "model": "haiku",
+        "description": "Lightweight research, codebase exploration, doc lookup",
+        "max_tokens": 4096
+      },
+      "implementation": {
+        "model": "sonnet",
+        "description": "Code generation, file creation, feature implementation",
+        "max_tokens": 8192
+      },
+      "architecture": {
+        "model": "opus",
+        "description": "Complex architectural decisions, deep analysis, synthesis",
+        "max_tokens": 16384
+      }
+    },
+    "subtask_routing": {
+      "research": "research",
+      "exploration": "research",
+      "type_definition": "implementation",
+      "code_generation": "implementation",
+      "test_writing": "implementation",
+      "config_setup": "implementation",
+      "refactoring": "implementation",
+      "architecture_decision": "architecture",
+      "synthesis": "architecture",
+      "code_review": "architecture",
+      "security_review": "architecture"
+    }
+  },
+  "execution": {
+    "max_parallel_agents": 6,
+    "agent_timeout_seconds": 300,
+    "retry_on_failure": true,
+    "max_retries": 2,
+    "isolation": {
+      "use_worktrees": true,
+      "worktree_trigger": "same_file_conflict"
+    }
+  },
+  "decomposition": {
+    "min_subtasks_for_parallel": 3,
+    "max_subtasks": 25,
+    "trivial_threshold": 2,
+    "dimensions": ["code", "research", "tests", "config", "docs"],
+    "false_dependency_challenges": [
+      "tests_need_implementation",
+      "ui_needs_api",
+      "config_needs_code",
+      "imports_need_exports"
+    ]
+  },
+  "output": {
+    "show_wave_plan": true,
+    "show_dependency_graph": true,
+    "show_speedup_estimate": true,
+    "show_agent_routing": true
+  }
+}

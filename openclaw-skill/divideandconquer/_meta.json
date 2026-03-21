@@ -1,0 +1,77 @@
+{
+  "schema": "openclaw.skill.v1",
+  "name": "divideandconquer",
+  "version": "1.0.0",
+  "displayName": "Divide and Conquer",
+  "description": "Task decomposition and parallel execution engine. Analyzes any complex task, breaks it into atomic subtasks, builds a dependency graph (DAG), groups independent work into parallel execution waves, and dispatches agents concurrently for maximum throughput. Handles feature builds, bug investigations, refactors, research synthesis, migrations, and greenfield projects. Includes heuristics for challenging false dependencies, worktree isolation for file conflicts, and honest assessment of serial vs parallel tradeoffs.",
+  "slogan": "Serial is the enemy. Parallel is the default.",
+  "author": "RuneweaverStudios",
+  "tags": [
+    "parallel",
+    "concurrency",
+    "task-decomposition",
+    "dag",
+    "dependency-graph",
+    "agent-orchestration",
+    "divide-and-conquer",
+    "workflow",
+    "productivity",
+    "multi-agent",
+    "openclaw"
+  ],
+  "platform": "openclaw",
+  "icon": "\u2694\ufe0f",
+  "color": "#f59e0b",
+  "dependencies": [
+    "python"
+  ],
+  "requires": {
+    "env": {
+      "required": [],
+      "optional": [
+        "ANTHROPIC_API_KEY",
+        "MAX_PARALLEL_AGENTS",
+        "DAC_LOG_LEVEL"
+      ]
+    }
+  },
+  "security": {
+    "noGatewaySecrets": true
+  },
+  "tools": [
+    {
+      "name": "decompose",
+      "description": "Break a task description into atomic subtasks with dependency mapping",
+      "params": {
+        "task": "The full task description to decompose",
+        "max_depth": "Maximum decomposition depth (default: 3)",
+        "dimensions": "Comma-separated dimensions to analyze: code,research,tests,config,docs (default: all)"
+      }
+    },
+    {
+      "name": "plan_waves",
+      "description": "Given a dependency graph, compute optimal parallel execution waves using topological sort",
+      "params": {
+        "subtasks": "JSON array of {id, description, depends_on: [ids]}",
+        "max_concurrency": "Maximum agents to run in parallel per wave (default: unlimited)"
+      }
+    },
+    {
+      "name": "execute",
+      "description": "Execute the wave plan by dispatching agents for each wave. In Claude Code, uses Agent tool. In API/OpenClaw, uses sessions_spawn.",
+      "params": {
+        "wave_plan": "JSON wave plan from plan_waves output",
+        "agent_routing": "JSON map of subtask IDs to agent types (optional)",
+        "dry_run": "If true, output the plan without executing (default: false)"
+      }
+    },
+    {
+      "name": "analyze",
+      "description": "Analyze a task and output the full decomposition, dependency graph, wave plan, and speedup estimate without executing",
+      "params": {
+        "task": "The task description to analyze",
+        "output_format": "Output format: text, json, or markdown (default: markdown)"
+      }
+    }
+  ]
+}
