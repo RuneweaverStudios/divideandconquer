@@ -299,11 +299,11 @@ divideandconquer/
 │       ├── SKILL.md                       # Documentation
 │       ├── config.json                    # Routing, concurrency, decomposition settings
 │       ├── scripts/
-│       │   └── decompose.py              # DAG engine (topological sort, waves, critical path)
+│       │   └── decompose.py              # DAG engine (waves, critical path, balance_waves grouping)
 │       └── workflows/                     # Reserved for YAML workflows
 │
 └── scripts/
-    └── decompose.py                       # Standalone DAG engine
+    └── decompose.py                       # Standalone DAG engine (mirrors OpenClaw copy)
 ```
 
 ---

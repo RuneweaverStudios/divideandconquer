@@ -7,7 +7,8 @@ Covers:
   - compute_critical_path: various graph shapes
   - format_wave_plan: markdown and JSON output
   - route_agent: known categories and unknown fallback
-  - parse_subtasks_json: valid input, desc/deps aliases, weight mapping
+  - parse_subtasks_json: valid input, desc/deps aliases, weight / tool_calls mapping
+  - balance_waves: light vs heavy grouping when outlier rule applies
   - Subtask dataclass: weight validation
   - Edge cases: single task, empty deps, self-dependency, empty input
 """
@@ -21,6 +22,7 @@ from decompose import (
     Subtask,
     Wave,
     WavePlan,
+    balance_waves,
     compute_critical_path,
     compute_waves,
     format_wave_plan,
@@ -210,6 +212,19 @@ class TestComputeWaves:
         # Sequential = 4, Parallel = max(3,1) = 3, speedup = 4/3 ≈ 1.33
         assert plan.speedup_estimate == 1.33
 
+    def test_balance_groups_heavy_outlier_in_parallel_wave(self):
+        tasks = [_st(1, weight=1), _st(2, weight=1), _st(3, weight=4)]
+        plan = compute_waves(tasks)
+        assert plan.has_complexity_grouping is True
+        md = format_wave_plan(plan)
+        assert "Light tasks" in md
+        assert "Heavy outlier" in md
+
+    def test_balance_disabled_skips_grouping(self):
+        tasks = [_st(1, weight=1), _st(2, weight=1), _st(3, weight=4)]
+        plan = compute_waves(tasks, balance=False)
+        assert plan.has_complexity_grouping is False
+
     def test_wide_then_narrow_topology(self):
         # 1,2,3,4 all independent, then 5 depends on all
         tasks = [_st(1), _st(2), _st(3), _st(4), _st(5, [1, 2, 3, 4])]
@@ -289,6 +304,7 @@ class TestFormatWavePlan:
             max_parallelism=1,
             critical_path_length=1,
             speedup_estimate=1.0,
+            has_complexity_grouping=False,
         )
         md = format_wave_plan(plan, fmt="markdown")
         assert "[code-reviewer]" in md
@@ -309,6 +325,7 @@ class TestFormatWavePlan:
         expected_keys = {
             "waves", "total_subtasks", "total_waves",
             "max_parallelism", "critical_path_length", "speedup_estimate",
+            "has_complexity_grouping",
         }
         assert expected_keys == set(parsed.keys())
 
@@ -395,6 +412,11 @@ class TestParseSubtasksJson:
         tasks = parse_subtasks_json(raw)
         assert tasks[0].estimated_weight == 3
 
+    def test_tool_calls_mapping(self):
+        raw = json.dumps([{"id": 1, "desc": "Explicit", "weight": 2, "tool_calls": 42}])
+        tasks = parse_subtasks_json(raw)
+        assert tasks[0].estimated_tool_calls == 42
+
     def test_default_weight_is_one(self):
         raw = json.dumps([{"id": 1, "desc": "Light"}])
         tasks = parse_subtasks_json(raw)
@@ -453,6 +475,25 @@ class TestSubtaskValidation:
 # ===================================================================
 # 8. Wave dataclass properties
 # ===================================================================
+
+class TestBalanceWaves:
+    """Tests for balance_waves()."""
+
+    def test_outlier_splits_into_two_groups(self):
+        wave = Wave(
+            number=1,
+            subtasks=[_st(1, weight=1), _st(2, weight=1), _st(3, weight=4)],
+        )
+        balance_waves([wave])
+        assert len(wave.display_groups) == 2
+        assert {s.id for s in wave.display_groups[0]} == {1, 2}
+        assert {s.id for s in wave.display_groups[1]} == {3}
+
+    def test_uniform_weights_single_group(self):
+        wave = Wave(number=1, subtasks=[_st(1, weight=2), _st(2, weight=2)])
+        balance_waves([wave])
+        assert len(wave.display_groups) == 1
+
 
 class TestWaveProperties:
     """Tests for Wave.parallelism and Wave.max_weight."""
@@ -638,3 +679,13 @@ class TestCLI:
         result = self._run("--plan", plan_json, "--max-concurrency", "1")
         assert result.returncode == 0
         assert "Wave 3" in result.stdout
+
+    def test_no_balance_flag(self):
+        plan_json = json.dumps([
+            {"id": 1, "desc": "A", "deps": [], "weight": 1},
+            {"id": 2, "desc": "B", "deps": [], "weight": 1},
+            {"id": 3, "desc": "C", "deps": [], "weight": 4},
+        ])
+        result = self._run("--plan", plan_json, "--no-balance")
+        assert result.returncode == 0
+        assert "Light tasks" not in result.stdout

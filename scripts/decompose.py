@@ -17,6 +17,8 @@ of a task into subtasks is done by the LLM using the SKILL.md instructions;
 this script validates and optimizes that decomposition.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
@@ -25,13 +27,20 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 
+def default_tool_calls_for_weight(weight: int) -> int:
+    """Midpoint of each complexity band (for display when tool_calls omitted)."""
+    bands = {1: 5, 2: 12, 3: 22, 4: 40}
+    return bands.get(weight, max(40, weight * 10))
+
+
 @dataclass
 class Subtask:
     id: int
     description: str
     depends_on: list[int] = field(default_factory=list)
     category: str = "general"  # research, code, test, config, docs
-    estimated_weight: int = 1  # relative effort (1=light, 2=medium, 3=heavy)
+    estimated_weight: int = 1  # relative effort (1=light .. 4+=massive)
+    estimated_tool_calls: Optional[int] = None  # optional explicit estimate
     agent_type: str = "general-purpose"
 
     def __post_init__(self):
@@ -41,11 +50,19 @@ class Subtask:
             )
 
 
+def effective_tool_calls(subtask: Subtask) -> int:
+    if subtask.estimated_tool_calls is not None:
+        return subtask.estimated_tool_calls
+    return default_tool_calls_for_weight(subtask.estimated_weight)
+
+
 @dataclass
 class Wave:
     number: int
     subtasks: list[Subtask]
     depends_on_waves: list[int] = field(default_factory=list)
+    # When set, partitions subtasks into light vs heavy (same wave; same deps).
+    groups: Optional[list[list[Subtask]]] = None
 
     @property
     def parallelism(self) -> int:
@@ -55,15 +72,44 @@ class Wave:
     def max_weight(self) -> int:
         return max((s.estimated_weight for s in self.subtasks), default=0)
 
+    @property
+    def total_weight(self) -> int:
+        return sum(s.estimated_weight for s in self.subtasks)
 
-@dataclass
-class WavePlan:
-    waves: list[Wave]
-    total_subtasks: int
-    total_waves: int
-    max_parallelism: int
-    critical_path_length: int
-    speedup_estimate: float
+    @property
+    def display_groups(self) -> list[list[Subtask]]:
+        if self.groups is not None:
+            return self.groups
+        return [list(self.subtasks)]
+
+
+def balance_waves(waves: list[Wave]) -> None:
+    """
+    Group tasks within each wave into light vs heavy when one task is an outlier.
+
+    Outlier rule: max_w >= 3 * average weight of tasks strictly lighter than max_w,
+    with more than one task in the wave. Does not change dependency order or wave
+    membership — only adds a visual / planning grouping for wall-clock awareness.
+    """
+    for w in waves:
+        if len(w.subtasks) <= 1:
+            w.groups = [list(w.subtasks)]
+            continue
+
+        weights = [s.estimated_weight for s in w.subtasks]
+        max_w = max(weights)
+        lighter = [s for s in w.subtasks if s.estimated_weight < max_w]
+        heaviest = [s for s in w.subtasks if s.estimated_weight == max_w]
+
+        if not lighter or len(heaviest) == len(w.subtasks):
+            w.groups = [list(w.subtasks)]
+            continue
+
+        avg_others = sum(s.estimated_weight for s in lighter) / len(lighter)
+        if max_w >= 3 * avg_others:
+            w.groups = [lighter, heaviest]
+        else:
+            w.groups = [list(w.subtasks)]
 
 
 def validate_dag(subtasks: list[Subtask]) -> tuple[bool, Optional[str]]:
@@ -96,7 +142,11 @@ def validate_dag(subtasks: list[Subtask]) -> tuple[bool, Optional[str]]:
     return True, None
 
 
-def compute_waves(subtasks: list[Subtask], max_concurrency: int = 0) -> WavePlan:
+def compute_waves(
+    subtasks: list[Subtask],
+    max_concurrency: int = 0,
+    balance: bool = True,
+) -> WavePlan:
     """
     Compute parallel execution waves from a dependency graph.
 
@@ -118,7 +168,7 @@ def compute_waves(subtasks: list[Subtask], max_concurrency: int = 0) -> WavePlan
             in_degree[s.id] += 1
 
     # BFS-based wave computation
-    waves = []
+    waves: list[Wave] = []
     remaining = set(ids)
     completed = set()
 
@@ -142,7 +192,6 @@ def compute_waves(subtasks: list[Subtask], max_concurrency: int = 0) -> WavePlan
             wave_batches = [ready]
 
         for batch in wave_batches:
-            wave_num = len(waves) + 1
             wave_subtasks = [task_map[sid] for sid in batch]
 
             # Determine which previous waves this wave depends on
@@ -154,13 +203,16 @@ def compute_waves(subtasks: list[Subtask], max_concurrency: int = 0) -> WavePlan
                             dep_waves.add(i + 1)
 
             waves.append(Wave(
-                number=wave_num,
+                number=len(waves) + 1,
                 subtasks=wave_subtasks,
                 depends_on_waves=sorted(dep_waves),
             ))
 
             completed.update(batch)
             remaining -= set(batch)
+
+    if balance:
+        balance_waves(waves)
 
     # Compute critical path length (longest chain of dependent weights)
     critical = compute_critical_path(subtasks)
@@ -169,14 +221,13 @@ def compute_waves(subtasks: list[Subtask], max_concurrency: int = 0) -> WavePlan
     max_par = max((w.parallelism for w in waves), default=0)
 
     # Weighted speedup: sequential_time / parallel_time
-    # Sequential = sum of all task weights (every task runs one after another)
-    # Parallel = sum of max weight per wave (wall-clock per wave = heaviest task)
-    # Note: when max_concurrency splits natural waves, parallel_time increases
-    # (more waves with the same total weight). Speedup is floored at 1.0 because
-    # concurrency-limited execution can never be faster than sequential.
     sequential_time = sum(s.estimated_weight for s in subtasks)
     parallel_time = sum(w.max_weight for w in waves)
     speedup = round(max(sequential_time / parallel_time, 1.0), 2) if parallel_time > 0 else 1.0
+
+    any_grouped = any(
+        w.groups is not None and len(w.display_groups) > 1 for w in waves
+    )
 
     return WavePlan(
         waves=waves,
@@ -185,7 +236,19 @@ def compute_waves(subtasks: list[Subtask], max_concurrency: int = 0) -> WavePlan
         max_parallelism=max_par,
         critical_path_length=critical,
         speedup_estimate=speedup,
+        has_complexity_grouping=any_grouped,
     )
+
+
+@dataclass
+class WavePlan:
+    waves: list[Wave]
+    total_subtasks: int
+    total_waves: int
+    max_parallelism: int
+    critical_path_length: int
+    speedup_estimate: float
+    has_complexity_grouping: bool = False
 
 
 def compute_critical_path(subtasks: list[Subtask]) -> int:
@@ -208,12 +271,21 @@ def compute_critical_path(subtasks: list[Subtask]) -> int:
     return max((longest_path(s.id) for s in subtasks), default=0)
 
 
+def _format_subtask_line(s: Subtask) -> str:
+    tc = effective_tool_calls(s)
+    agent_note = f" [{s.agent_type}]" if s.agent_type != "general-purpose" else ""
+    return (
+        f"- [{s.id}] {s.description}{agent_note} "
+        f"[weight: {s.estimated_weight}, ~{tc} tool calls]"
+    )
+
+
 def format_wave_plan(plan: WavePlan, fmt: str = "markdown") -> str:
     """Format the wave plan for display."""
     if fmt == "json":
         return json.dumps(asdict(plan), indent=2)
 
-    lines = []
+    lines: list[str] = []
     lines.append("## Execution Plan\n")
 
     for wave in plan.waves:
@@ -223,19 +295,56 @@ def format_wave_plan(plan: WavePlan, fmt: str = "markdown") -> str:
         else:
             dep_note = " ~~ No dependencies"
 
-        lines.append(f"### Wave {wave.number} (parallel, {wave.parallelism} agents){dep_note}")
-        for s in wave.subtasks:
-            agent_note = f" [{s.agent_type}]" if s.agent_type != "general-purpose" else ""
-            lines.append(f"- [{s.id}] {s.description}{agent_note}")
+        lines.append(
+            f"### Wave {wave.number} (parallel, {wave.parallelism} agents){dep_note}"
+        )
+
+        groups = wave.display_groups
+        if len(groups) > 1:
+            max_tc_light = max(
+                (effective_tool_calls(s) for s in groups[0]), default=0
+            )
+            max_tc_heavy = max(
+                (effective_tool_calls(s) for s in groups[1]), default=0
+            )
+            lines.append(
+                f"**Light tasks** (finish early; max ~{max_tc_light} tool calls in this group)"
+            )
+            for s in groups[0]:
+                lines.append(_format_subtask_line(s))
+            lines.append(
+                f"**Heavy outlier(s)** (wall-clock driver; max ~{max_tc_heavy} tool calls)"
+            )
+            for s in groups[1]:
+                lines.append(_format_subtask_line(s))
+        else:
+            for s in wave.subtasks:
+                lines.append(_format_subtask_line(s))
+
+        tw = wave.total_weight
+        driver = max((effective_tool_calls(s) for s in wave.subtasks), default=0)
+        lines.append(
+            f"  *Total wave weight: {tw} | Wall-clock driver (max task): ~{driver} tool calls*"
+        )
         lines.append("")
 
-    lines.append(f"**Summary:**")
+    lines.append("**Summary:**")
     par_parts = " + ".join(str(w.parallelism) for w in plan.waves)
-    lines.append(f"- Parallelism: {par_parts} = {plan.total_subtasks} tasks across {plan.total_waves} waves")
+    lines.append(
+        f"- Parallelism: {par_parts} = {plan.total_subtasks} tasks across {plan.total_waves} waves"
+    )
     lines.append(f"- Sequential equivalent: {plan.total_subtasks} waves")
     lines.append(f"- Speedup: ~{plan.speedup_estimate}x")
     lines.append(f"- Critical path length: {plan.critical_path_length}")
     lines.append(f"- Max concurrency: {plan.max_parallelism} agents")
+    if plan.has_complexity_grouping:
+        lines.append(
+            "- Complexity: at least one wave has **light vs heavy** grouping (outlier rule)"
+        )
+    else:
+        lines.append(
+            "- Complexity: no wave triggered light/heavy grouping (use weights to surface imbalance)"
+        )
 
     return "\n".join(lines)
 
@@ -263,12 +372,17 @@ def parse_subtasks_json(raw: str) -> list[Subtask]:
     data = json.loads(raw)
     subtasks = []
     for item in data:
+        weight = item.get("weight", 1)
+        tc = item.get("tool_calls")
+        if tc is not None:
+            tc = int(tc)
         subtasks.append(Subtask(
             id=item["id"],
             description=item.get("description", item.get("desc", "")),
             depends_on=item.get("depends_on", item.get("deps", [])),
             category=item.get("category", "general"),
-            estimated_weight=item.get("weight", 1),
+            estimated_weight=weight,
+            estimated_tool_calls=tc,
             agent_type=route_agent(item.get("category", "general")),
         ))
     return subtasks
@@ -297,6 +411,11 @@ def main():
         help="Max parallel agents per wave (0=unlimited)",
     )
     parser.add_argument(
+        "--no-balance",
+        action="store_true",
+        help="Skip complexity grouping (light vs heavy) within waves",
+    )
+    parser.add_argument(
         "--validate",
         type=str,
         help="JSON array of subtasks to validate (check for cycles, missing deps)",
@@ -315,18 +434,22 @@ def main():
 
     if args.plan:
         subtasks = parse_subtasks_json(args.plan)
-        plan = compute_waves(subtasks, max_concurrency=args.max_concurrency)
+        plan = compute_waves(
+            subtasks,
+            max_concurrency=args.max_concurrency,
+            balance=not args.no_balance,
+        )
         print(format_wave_plan(plan, fmt=args.output))
     else:
         parser.print_help()
         print("\nExample:")
         print('  python decompose.py --plan \'[')
-        print('    {"id":1,"desc":"Define types","deps":[],"category":"code"},')
-        print('    {"id":2,"desc":"Research WebSocket libs","deps":[],"category":"research"},')
-        print('    {"id":3,"desc":"Build API endpoint","deps":[1],"category":"code"},')
-        print('    {"id":4,"desc":"Build UI component","deps":[1],"category":"code"},')
-        print('    {"id":5,"desc":"Wire integration","deps":[3,4],"category":"code"},')
-        print('    {"id":6,"desc":"Write tests","deps":[5],"category":"test"}')
+        print('    {"id":1,"desc":"Define types","deps":[],"category":"code","weight":1},')
+        print('    {"id":2,"desc":"Research WebSocket libs","deps":[],"category":"research","weight":2},')
+        print('    {"id":3,"desc":"Build API endpoint","deps":[1],"category":"code","weight":2},')
+        print('    {"id":4,"desc":"Build UI component","deps":[1],"category":"code","weight":2},')
+        print('    {"id":5,"desc":"Wire integration","deps":[3,4],"category":"code","weight":3},')
+        print('    {"id":6,"desc":"Write tests","deps":[5],"category":"test","weight":2}')
         print("  ]'")
 
 

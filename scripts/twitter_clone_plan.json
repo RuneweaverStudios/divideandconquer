@@ -1,0 +1,23 @@
+[
+  {"id": 1, "desc": "Research: stack (Next.js/Remix), auth (NextAuth/Clerk), hosting", "deps": [], "category": "research", "weight": 2},
+  {"id": 2, "desc": "Design DB schema: users, tweets, follows, likes, media refs", "deps": [], "category": "code", "weight": 2},
+  {"id": 3, "desc": "Monorepo scaffold, lint, env, shared TypeScript types", "deps": [], "category": "code", "weight": 2},
+  {"id": 4, "desc": "Run migrations + seed dev data", "deps": [2], "category": "code", "weight": 2},
+  {"id": 5, "desc": "Auth API: signup, login, sessions, JWT/session cookies", "deps": [2, 3, 4], "category": "code", "weight": 3},
+  {"id": 6, "desc": "Tweet CRUD + validation + rate limits", "deps": [2, 3, 4], "category": "code", "weight": 3},
+  {"id": 7, "desc": "Timeline/home feed (cursor pagination)", "deps": [2, 3, 4], "category": "code", "weight": 3},
+  {"id": 8, "desc": "Follow/unfollow + follower graph queries", "deps": [2, 3, 4], "category": "code", "weight": 2},
+  {"id": 9, "desc": "Media upload pipeline (S3/R2 + signed URLs)", "deps": [2, 3, 4], "category": "code", "weight": 3},
+  {"id": 10, "desc": "Search users/tweets (full-text or simple)", "deps": [2, 3, 4], "category": "code", "weight": 3},
+  {"id": 11, "desc": "Realtime: WebSocket/SSE for new tweets + presence (HEAVY)", "deps": [2, 3, 4], "category": "code", "weight": 4, "tool_calls": 55},
+  {"id": 12, "desc": "Notifications API (mentions, replies)", "deps": [2, 3, 4], "category": "code", "weight": 2},
+  {"id": 13, "desc": "Frontend: app shell, layout, routing, design system", "deps": [3], "category": "code", "weight": 3},
+  {"id": 14, "desc": "Frontend: auth flows (login/register)", "deps": [3, 5, 13], "category": "code", "weight": 2},
+  {"id": 15, "desc": "Frontend: compose tweet + media picker", "deps": [3, 6, 9, 13], "category": "code", "weight": 3},
+  {"id": 16, "desc": "Frontend: home timeline + infinite scroll", "deps": [3, 7, 13], "category": "code", "weight": 3},
+  {"id": 17, "desc": "Frontend: profile + followers UI", "deps": [3, 6, 8, 13], "category": "code", "weight": 2},
+  {"id": 18, "desc": "Frontend: search + realtime hooks", "deps": [3, 10, 11, 13], "category": "code", "weight": 3},
+  {"id": 19, "desc": "Backend integration tests + API contract tests", "deps": [5, 6, 7, 8, 9, 10, 11, 12], "category": "test", "weight": 3},
+  {"id": 20, "desc": "Frontend tests (RTL) + E2E (Playwright)", "deps": [14, 15, 16, 17, 18], "category": "test", "weight": 3},
+  {"id": 21, "desc": "Code review + security pass + deploy checklist", "deps": [19, 20], "category": "review", "weight": 2}
+]

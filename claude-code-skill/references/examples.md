@@ -2,6 +2,8 @@
 
 Complete walk-throughs showing how divideandconquer decomposes, maps, plans, and executes real tasks. Read this file when you need detailed guidance on applying the skill to a specific task type.
 
+**Complexity-aware planning**: Every subtask below uses **`[w:N, ~T]`** = weight band and approximate tool calls. Massive work must be **subdivided** (Phase 1.5) before agents run. After waves are computed, apply **Phase 3.5** (balance): call out waves where one task is an outlier, or run `scripts/decompose.py` with `weight` / `tool_calls` in JSON to get **light vs heavy** grouping in the execution plan.
+
 ---
 
 ## Example 1: Full-Stack Feature — Team Chat System
@@ -11,19 +13,19 @@ Complete walk-throughs showing how divideandconquer decomposes, maps, plans, and
 ### Phase 1: Decompose
 
 ```
-1. Define TypeScript types for Message, ChatRoom, ChatEvent
-2. Create messages + chat_rooms DB migration
-3. Research WebSocket setup for our stack (e.g., Socket.IO vs ws)
-4. Implement GET /api/messages?roomId=X endpoint
-5. Implement POST /api/messages endpoint
-6. Set up WebSocket server with room join/leave/broadcast
-7. Build ChatWindow component with message list + input
-8. Build ChatNotification component (unread badge)
-9. Wire WebSocket client in React (useChat hook)
-10. Unit tests for API endpoints
-11. Unit tests for WebSocket events
-12. Integration test for send-and-receive flow
-13. Code review pass
+1. Define TypeScript types for Message, ChatRoom, ChatEvent     [w:1, ~5]
+2. Create messages + chat_rooms DB migration                     [w:2, ~12]
+3. Research WebSocket setup for our stack (e.g., Socket.IO vs ws) [w:2, ~14]
+4. Implement GET /api/messages?roomId=X endpoint                 [w:2, ~12]
+5. Implement POST /api/messages endpoint                         [w:2, ~12]
+6. Set up WebSocket server with room join/leave/broadcast        [w:3, ~24]  ← wall-clock driver in Wave 2; subdivide if >30 tool calls
+7. Build ChatWindow component with message list + input          [w:2, ~14]
+8. Build ChatNotification component (unread badge)               [w:1, ~8]
+9. Wire WebSocket client in React (useChat hook)               [w:2, ~14]
+10. Unit tests for API endpoints                                 [w:2, ~12]
+11. Unit tests for WebSocket events                             [w:2, ~12]
+12. Integration test for send-and-receive flow                   [w:2, ~16]
+13. Code review pass                                             [w:2, ~10]
 ```
 
 ### Phase 2: Map Dependencies
@@ -47,36 +49,30 @@ Complete walk-throughs showing how divideandconquer decomposes, maps, plans, and
 ### Phase 3: Plan Execution Waves
 
 ```
-Wave 1 (parallel, 3 agents):
-  [1] Define TypeScript types (Message, ChatRoom, ChatEvent)
-  [2] Create DB migration (messages + chat_rooms tables)
-  [3] Research WebSocket library choice for our stack
+Wave 1 (parallel, 3 agents) — balanced; similar weights
+  [1] Define TypeScript types (Message, ChatRoom, ChatEvent)     [w:1]
+  [2] Create DB migration (messages + chat_rooms tables)       [w:2]
+  [3] Research WebSocket library choice for our stack          [w:2]
 
-Wave 2 (parallel, 5 agents):
-  [4] GET /api/messages endpoint (needs: 1, 2)
-  [5] POST /api/messages endpoint (needs: 1, 2)
-  [6] WebSocket server — room management + broadcast (needs: 1, 3)
-  [7] ChatWindow component with mock data (needs: 1)
-  [8] ChatNotification badge component (needs: 1)
+Wave 2 (parallel, 5 agents) — **imbalance**: [6] is heavier than [4],[5],[7],[8]
+  Light: [4] GET /api/messages [w:2] | [5] POST /api/messages [w:2] | [7] ChatWindow [w:2] | [8] ChatNotification [w:1]
+  Heavy driver: [6] WebSocket server [w:3] — dominates wall-clock for this wave; consider splitting [6] into server setup vs room logic if it grows past ~30 tool calls
+  (deps unchanged: 4,5 need 1,2; 6 needs 1,3; 7,8 need 1)
 
 Wave 3 (parallel, 3 agents):
-  [9]  useChat hook — wire WS client to ChatWindow (needs: 6, 7)
-  [10] Unit tests for API endpoints (needs: 4, 5)
-  [11] Unit tests for WebSocket events (needs: 6)
+  [9]  useChat hook — wire WS client to ChatWindow (needs: 6, 7)  [w:2]
+  [10] Unit tests for API endpoints (needs: 4, 5)                 [w:2]
+  [11] Unit tests for WebSocket events (needs: 6)                 [w:2]
 
-Wave 4 (parallel, 2 agents):
-  [12] Integration test: send-and-receive (needs: 9)
-  [13] Code review (needs: 10, 11, 12) ← actually must wait for 12
+Wave 4 (parallel, 1 agent):
+  [12] Integration test: send-and-receive (needs: 9)                [w:2]
 
-Wave 4 revised:
-  [12] Integration test: send-and-receive (needs: 9)
-
-Wave 5:
-  [13] Code review (needs: 10, 11, 12)
+Wave 5 (parallel, 1 agent):
+  [13] Code review (needs: 10, 11, 12)                             [w:2]
 
 Parallelism: 3 + 5 + 3 + 1 + 1 = 13 tasks across 5 waves
 Sequential equivalent: 13 waves
-Speedup: ~2.6x
+Speedup: ~2.6x (honest wall-clock for Wave 2 ≈ max agent time, usually task [6])
 ```
 
 ### Phase 4: Execute
@@ -125,15 +121,15 @@ And so on through Waves 3-5.
 ### Phase 1: Decompose
 
 ```
-1. Search codebase for webhook handler implementation
-2. Search error logs / Stripe dashboard for failure patterns
-3. Check recent git changes to payment-related files
-4. Read Stripe docs on webhook retry behavior and idempotency
-5. Analyze the webhook handler code for race conditions
-6. Check database transaction isolation level on subscription updates
-7. Implement fix (based on findings)
-8. Write regression test simulating concurrent webhook deliveries
-9. Security review of payment code changes
+1. Search codebase for webhook handler implementation           [w:2, ~10]
+2. Search error logs / Stripe dashboard for failure patterns      [w:2, ~12]
+3. Check recent git changes to payment-related files             [w:2, ~10]
+4. Read Stripe docs on webhook retry behavior and idempotency  [w:2, ~12]
+5. Analyze the webhook handler code for race conditions          [w:2, ~14]
+6. Check database transaction isolation level on subscription updates [w:2, ~12]
+7. Implement fix (based on findings)                             [w:3, ~22]  ← single serial bottleneck after research; subdivide if fix is huge
+8. Write regression test simulating concurrent webhook deliveries [w:2, ~14]
+9. Security review of payment code changes                       [w:2, ~12]
 ```
 
 ### Phase 2: Map Dependencies
